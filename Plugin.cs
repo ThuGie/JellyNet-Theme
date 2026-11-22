@@ -95,10 +95,35 @@ public sealed class Registration(ILogger<Registration> logger) : Microsoft.Exten
         }
 
         var version = Assets.Version;
-        return html.Insert(end, $"""
-            <link data-jellynet rel="stylesheet" href="../JellyNet/assets/{version}/jellynet.css">
+        var head = html.LastIndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+        var output = html.Insert(end, $"""
             <script data-jellynet defer src="../JellyNet/assets/{version}/jellynet.js"></script>
             """);
+        var style = $"""
+            <link data-jellynet rel="stylesheet" href="../JellyNet/assets/{version}/jellynet.css">
+            """;
+        if (head < 0 || head >= end)
+        {
+            return output.Insert(end, style);
+        }
+
+        const string boot = """
+            <style>
+              html.jn-preparing, html.jn-preparing body { background: #260d15 !important; }
+              html.jn-preparing body > :not(.jn-root) { visibility: hidden !important; }
+            </style>
+            <script>
+              try {
+                if (/^#\/home(?:[?]|$)/.test(location.hash)
+                    && !new URLSearchParams(location.hash.split('?')[1]).has('tab')
+                    && sessionStorage.getItem('jellynet-ready') === '1') {
+                  document.documentElement.classList.add('jn-preparing');
+                  setTimeout(function () { document.documentElement.classList.remove('jn-preparing'); }, 2000);
+                }
+              } catch (_) {}
+            </script>
+            """;
+        return output.Insert(head, boot + style);
     }
 }
 

@@ -1,23 +1,39 @@
 <!DOCTYPE html>
 <div id="jellyNetSettings" data-role="page" class="page type-interior pluginConfigurationPage">
   <div data-role="content">
-    <div class="content-primary">
-      <h1>JellyNet</h1>
+    <div class="content-primary jn-settings">
+      <h1>JellyNet settings</h1>
+      <p>Choose who sees JellyNet and which links or shelves appear by default.</p>
       <form>
+        <fieldset>
+          <legend>Availability</legend>
         <label class="checkboxContainer">
           <input is="emby-checkbox" name="enabled" type="checkbox">
           <span>Enable JellyNet theme</span>
         </label>
-        <div class="inputContainer">
-          <label for="jellyNetPilot">Pilot user IDs</label>
-          <textarea is="emby-textarea" id="jellyNetPilot" name="pilot" rows="3"></textarea>
-          <div class="fieldDescription">Optional. Enter one Jellyfin user ID per line. An empty list enables the theme for everyone.</div>
-        </div>
+          <label class="jn-settings-select" for="jellyNetAudience">Show JellyNet to</label>
+          <select id="jellyNetAudience" name="audience">
+            <option value="everyone">Everyone</option>
+            <option value="pilot">Selected users</option>
+          </select>
+          <div data-pilot hidden>
+            <p class="fieldDescription">Select at least one user.</p>
+            <div data-users></div>
+            <label class="jn-settings-select" for="jellyNetPilot">Additional user IDs</label>
+            <textarea is="emby-textarea" id="jellyNetPilot" name="pilot" rows="2"></textarea>
+            <div class="fieldDescription">One ID per line. Use this field if a user is unavailable in the list.</div>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Plugin drawer</legend>
         <div class="inputContainer">
           <label for="jellyNetLinks">Plugin links</label>
           <textarea is="emby-textarea" id="jellyNetLinks" name="links" rows="4"></textarea>
           <div class="fieldDescription">One per line. Use Name | URL or Name | URL | admin for an administrator-only entry.</div>
         </div>
+        </fieldset>
+        <fieldset>
+          <legend>Default homepage</legend>
         <div class="inputContainer">
           <label for="jellyNetTags">Pinned tags</label>
           <textarea is="emby-textarea" id="jellyNetTags" name="tags" rows="3"></textarea>
@@ -28,11 +44,40 @@
           <textarea is="emby-textarea" id="jellyNetCollections" name="collections" rows="3"></textarea>
           <div class="fieldDescription">One Jellyfin collection ID per line.</div>
         </div>
-        <button is="emby-button" type="submit" class="raised button-submit block">Save</button>
-        <p role="status"></p>
+        </fieldset>
+        <div class="jn-settings-actions">
+          <button is="emby-button" type="submit" class="raised button-submit">Save settings</button>
+          <button is="emby-button" type="button" data-retry hidden>Retry</button>
+          <p role="status" aria-live="polite"></p>
+        </div>
       </form>
     </div>
   </div>
+  <style>
+    #jellyNetSettings .jn-settings { max-width: 48rem; }
+    #jellyNetSettings [hidden] { display: none !important; }
+    #jellyNetSettings .inputContainer { margin: .55rem 0 1.05rem; }
+    #jellyNetSettings .inputContainer label { display: block; margin-bottom: .35rem; }
+    #jellyNetSettings textarea, #jellyNetSettings select {
+      box-sizing: border-box;
+      background: #21191c;
+      color: #fff5e6;
+      border: 1px solid #83606a;
+      border-radius: .35rem;
+    }
+    #jellyNetSettings textarea { display: block; width: 100%; padding: .55rem .65rem; font: inherit; resize: vertical; }
+    #jellyNetSettings input[type=checkbox] { accent-color: #ffbd69; }
+    #jellyNetSettings :focus-visible { outline: 2px solid #ffbd69; outline-offset: 3px; }
+    #jellyNetSettings .jn-settings-actions [type=submit] { color: #21160e; background: #ffbd69; }
+    #jellyNetSettings .jn-settings-actions [type=submit]:disabled { opacity: .65; }
+    #jellyNetSettings fieldset { min-width: 0; margin: 1.5rem 0; padding: 1rem; border: 1px solid currentColor; border-color: rgba(127, 127, 127, .55); border-radius: .5rem; }
+    #jellyNetSettings legend { padding: 0 .4rem; font-weight: 650; }
+    #jellyNetSettings .jn-settings-select { display: block; margin: .7rem 0 .35rem; }
+    #jellyNetSettings select { min-height: 2.75rem; max-width: 100%; padding: .4rem .6rem; font: inherit; color-scheme: dark; }
+    #jellyNetSettings [data-users] { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: .2rem 1rem; max-height: 14rem; overflow: auto; }
+    #jellyNetSettings [data-users] label { display: flex; align-items: center; gap: .45rem; min-height: 2.55rem; overflow-wrap: anywhere; }
+    #jellyNetSettings .jn-settings-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+  </style>
   <script>
     (() => {
       const page = document.getElementById('jellyNetSettings');
@@ -44,23 +89,57 @@
       const guid = /^(?:[a-f\d]{32}|[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12})$/i;
       const submit = form.querySelector('[type=submit]');
       submit.disabled = true;
+      const pilotPanel = page.querySelector('[data-pilot]');
+      const userList = page.querySelector('[data-users]');
+      const retry = page.querySelector('[data-retry]');
+      const normalized = id => id.replace(/-/g, '').toLowerCase();
+      const updateAudience = () => { pilotPanel.hidden = field('audience').value !== 'pilot'; };
+      field('audience').addEventListener('change', updateAudience);
       let config;
-      page.addEventListener('pageshow', async () => {
+      const load = async () => {
+        submit.disabled = true;
+        retry.hidden = true;
+        status.textContent = 'Loading JellyNet settings...';
+        userList.replaceChildren();
         try {
           config = await ApiClient.getPluginConfiguration(id);
           field('enabled').checked = config.Enabled;
-          field('pilot').value = (config.PilotUsers || []).join('\n');
+          const pilots = config.PilotUsers || [];
+          field('audience').value = pilots.length ? 'pilot' : 'everyone';
+          let users = [];
+          try { users = await ApiClient.getUsers(); } catch { /* Manual IDs remain available. */ }
+          for (const user of users) {
+            const label = document.createElement('label');
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = user.Id;
+            input.checked = pilots.some(id => normalized(id) === normalized(user.Id));
+            label.append(input, document.createTextNode(user.Name));
+            userList.append(label);
+          }
+          field('pilot').value = pilots.filter(id => !users.some(user => normalized(user.Id) === normalized(id))).join('\n');
+          updateAudience();
           field('tags').value = (config.PinnedTags || []).join('\n');
           field('collections').value = (config.PinnedCollections || []).join('\n');
           field('links').value = (config.Links || []).map(link => [link.Name, link.Url, ...(link.AdminOnly ? ['admin'] : [])].join(' | ')).join('\n');
           submit.disabled = false;
+          status.textContent = '';
         } catch {
           status.textContent = 'JellyNet settings could not be loaded.';
+          retry.hidden = false;
         }
-      });
+      };
+      page.addEventListener('pageshow', load);
+      retry.addEventListener('click', load);
       form.addEventListener('submit', async event => {
         event.preventDefault();
-        const pilot = lines('pilot');
+        if (submit.disabled || !config) return;
+        const selected = [...userList.querySelectorAll('input:checked')].map(input => input.value);
+        const pilot = field('audience').value === 'pilot' ? [...selected, ...lines('pilot')] : [];
+        if (field('audience').value === 'pilot' && !pilot.length) {
+          status.textContent = 'Select at least one user, or choose Everyone.';
+          return;
+        }
         const collections = lines('collections');
         if (![...pilot, ...collections].every(value => guid.test(value))) {
           status.textContent = 'Enter valid Jellyfin IDs in the pilot and collection fields.';
@@ -76,10 +155,10 @@
           await ApiClient.updatePluginConfiguration(id, {
             ...config,
             Enabled: field('enabled').checked,
-            PilotUsers: pilot, PinnedTags: lines('tags'), PinnedCollections: collections,
+            PilotUsers: [...new Map(pilot.map(id => [normalized(id), id])).values()], PinnedTags: lines('tags'), PinnedCollections: collections,
             Links: links.map(([Name, Url, role]) => ({ Name, Url, AdminOnly: role === 'admin' }))
           });
-          status.textContent = 'Saved. Restart Jellyfin, then reload the web client.';
+          status.textContent = 'Saved. Reload Jellyfin Web to apply the changes.';
         } catch {
           status.textContent = 'JellyNet settings could not be saved.';
         } finally {

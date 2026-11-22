@@ -31,6 +31,8 @@ declare global {
   interface Window {
     ApiClient?: Client;
     JellyTube?: { open(): Promise<void> | void };
+    JellyManga?: { open(): Promise<void> | void };
+    jellySpotPlugin?: { openUserUi(tab: string): void };
   }
 }
 

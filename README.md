@@ -12,12 +12,12 @@ JellyNet adds a personalized homepage, category browser, and plugin drawer to Je
    ```
 
 3. In the plugin catalog, install **JellyNet** and restart Jellyfin.
-4. Open the installed **JellyNet** plugin's settings. Add one or more pilot user IDs to test with specific accounts, enable the theme, and save. An empty pilot list enables it for every user. Restart Jellyfin and reload the affected clients.
+4. Open the installed **JellyNet** plugin's settings. Choose Everyone or select specific users, enable the theme, and save. Reload the affected clients.
 5. Open Jellyfin as an enabled user. Use the hamburger to browse categories, open plugins, and choose **Customize Home**.
 
 The drawer opens JellyTube through its existing web integration when available. To add Jellytomb and other plugin links, use the destination confirmed in your server's signed-in Jellyfin Web session. In the JellyNet plugin settings enter one item per line using `Name | URL`. Append `| admin` for administrator-only links. Native Jellyfin routes beginning with `#/`, server-relative paths, and HTTP(S) destinations are accepted. Jellyfin continues to enforce permissions at the destination.
 
-To undo a rollout, disable JellyNet and restart Jellyfin. Keep File Transformation active for the other plugins that use it. Individual viewers can choose **Use standard Jellyfin home** from their Customize Home screen.
+To undo a rollout, disable JellyNet and reload Jellyfin Web. Keep File Transformation active for the other plugins that use it. Individual viewers can choose **Use standard Jellyfin home** from their Customize Home screen.
 
 ## Build and release
 

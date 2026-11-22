@@ -35,11 +35,18 @@ function saveTarget(shelf: Shelf) {
   });
 }
 
+const genreShelves: Shelf[] = [
+  { id: 'action-adventure', title: 'Action & Adventure', kind: 'genre', value: 'Action|Adventure|Action & Adventure' },
+  { id: 'animation', title: 'Animation', kind: 'genre', value: 'Animation' }
+];
+
 const defaults: Shelf[] = [
-  { id: 'resume', title: 'Continue Watching', kind: 'resume', landscape: true },
-  { id: 'next', title: 'Next Up', kind: 'next', landscape: true },
-  { id: 'latest', title: 'Recently Added', kind: 'latest' },
-  { id: 'favorites', title: 'My List', kind: 'favorites' }
+  { id: 'latest-movies', title: 'Latest Movies', kind: 'latest', media: 'Movie' },
+  { id: 'latest-series', title: 'Latest Series', kind: 'latest', media: 'Series' },
+  ...genreShelves,
+  { id: 'favorites', title: 'My List', kind: 'favorites', hidden: true },
+  { id: 'resume', title: 'Continue Watching', kind: 'resume', landscape: true, hidden: true },
+  { id: 'next', title: 'Next Up', kind: 'next', landscape: true, hidden: true }
 ];
 
 function initial(): Layout {
@@ -99,7 +106,6 @@ class Theme {
   private settings?: Settings;
   private customized = false;
   private layoutReadable = false;
-  private views: Item[] = [];
 
   private player = false;
   private nativeMain?: HTMLElement;
@@ -124,9 +130,8 @@ class Theme {
       this.api.loadLayout(signal).then(layout => ({ ok: true, layout })).catch(() => ({ ok: false, layout: undefined }))
     ]);
     this.settings = settings;
-    if (!this.settings || signal.aborted) return;
+    if (!this.settings || signal.aborted) { clearBoot(false); return; }
 
-    void this.api.views().then(data => { if (!signal.aborted) this.views = data.Items; }).catch(() => {});
     void fetch(new URL('config.json', location.href), { signal }).then(response => response.json())
       .then(data => {
         this.configLinks = (Array.isArray(data.menuLinks) ? data.menuLinks : [])
@@ -167,10 +172,11 @@ class Theme {
     this.root.remove();
     this.restoreStock();
     this.api.clear();
+    clearBoot(false);
   }
 
   private restoreStock() {
-    document.body.classList.remove('jn-enhanced');
+    document.body.classList.remove('jn-enhanced', 'jn-native-details');
     if (!this.nativeMain || !this.nativeState) return;
     this.nativeMain.inert = this.nativeState.inert;
     if (this.nativeState.aria === null) this.nativeMain.removeAttribute('aria-hidden');
@@ -187,13 +193,20 @@ class Theme {
     this.root.remove();
     this.restoreStock();
     const [path, query] = this.hash.split('?');
-    if (path !== '#/home') return;
+    if (path !== '#/home') {
+      if (!this.layout.standard && /^#\/(?:details|library|list|search|user\/settings)(?:[/?]|$)/.test(path)) {
+        document.body.classList.add('jn-native-details');
+      }
+      releaseBoot();
+      return;
+    }
     const params = new URLSearchParams(query);
     const view = params.get('jellynet') || '';
-    if (view && !['browse', 'categories', 'search', 'customize', 'stock'].includes(view)) return;
+    if (view && !['browse', 'categories', 'search', 'customize', 'stock', 'movies', 'series'].includes(view)) return;
 
     const signal = this.controller.signal;
     if (view === 'stock' || (this.layout.standard && !view)) {
+      clearBoot(false);
       const shortcut = view === 'stock' && !this.layout.standard
         ? link('Back to JellyNet', route(), 'jn-button jn-stock-shortcut')
         : link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
@@ -215,8 +228,8 @@ class Theme {
     nav.setAttribute('aria-label', 'Browse');
     nav.append(
       link('Home', route()),
-      link('Movies', saveTarget({ id: '', kind: 'catalog', media: 'Movie', title: 'Movies' })),
-      link('Series', saveTarget({ id: '', kind: 'catalog', media: 'Series', title: 'Series' })),
+      link('Movies', route('movies')),
+      link('Series', route('series')),
       link('Categories', route('categories')),
       link('Search', route('search'))
     );
@@ -229,6 +242,7 @@ class Theme {
     this.root.replaceChildren(bar, this.content);
     document.body.classList.add('jn-enhanced');
     document.body.append(this.root);
+    clearBoot(!this.layout.standard);
     const stock = document.querySelector<HTMLElement>('#reactRoot, #appRoot, .mainAnimatedPages');
     if (stock) {
       this.nativeMain = stock;
@@ -247,6 +261,13 @@ class Theme {
     };
     restore();
     if (view === 'browse' || view === 'search') this.browse(params, signal, restore);
+    else if (view === 'movies' || view === 'series') {
+      const media = view === 'movies' ? 'Movie' : 'Series';
+      const title = view === 'movies' ? 'Movies' : 'Series';
+      const catalog: Shelf = { id: 'all-' + view, title, kind: 'catalog', media };
+      this.content.classList.add('jn-home-content');
+      this.home(signal, restore, position, catalog);
+    }
     else if (view === 'categories') void this.categories(signal).then(restore).catch(() => this.error(this.content, signal));
     else if (view === 'customize') void this.customize(signal).catch(() => this.error(this.content, signal));
     else this.home(signal, restore, position);
@@ -268,23 +289,29 @@ class Theme {
       dialog.append(group);
       return group;
     };
-    dialog.append(button('Close', () => dialog.close()));
+    const top = el('div', 'jn-drawer-top');
+    top.append(el('strong', '', 'JellyNet'), button('Close', () => dialog.close(), 'jn-button jn-drawer-close'));
+    dialog.append(top);
     const browse = grouping('Browse');
-    browse.append(link('Home', route()), link('Movies', saveTarget({ id: '', kind: 'catalog', media: 'Movie', title: 'Movies' })),
-      link('Series', saveTarget({ id: '', kind: 'catalog', media: 'Series', title: 'Series' })),
+    browse.append(link('Home', route()), link('Movies', route('movies')),
+      link('Series', route('series')),
       link('Categories', route('categories')), link('Search', route('search')));
-    const libraries = grouping('Libraries');
     const plugins = grouping('Plugins');
     const settings = grouping('Settings');
     settings.append(link('Customize Home', route('customize')), link('Open standard Jellyfin home', route('stock')), link('Jellyfin settings', '#/user/settings'));
     if (this.settings?.IsAdmin) settings.append(link('Dashboard', '#/dashboard'));
-    if (window.JellyTube) plugins.append(button('YouTube', () => {
+    const addPlugin = (name: string, open: () => unknown) => plugins.append(button(name, () => {
       dialog.close();
       trigger.focus();
-      void Promise.resolve(window.JellyTube?.open()).catch(() => {
-        if (this.root.isConnected) this.content.prepend(el('p', 'jn-status', 'YouTube could not be opened.'));
+      void Promise.resolve().then(open).catch(() => {
+        if (this.root.isConnected) this.content.prepend(el('p', 'jn-status', name + ' could not be opened.'));
       });
     }));
+    if (window.JellyTube) addPlugin('YouTube', () => window.JellyTube?.open());
+    if (window.jellySpotPlugin) addPlugin('Spotify', () => {
+      location.hash = route('stock', { tab: 'browse' });
+    });
+    if (window.JellyManga) addPlugin('JellyTome (Manga)', () => window.JellyManga?.open());
     const seen = new Set<string>();
     for (const entry of [...(this.settings?.Links ?? []), ...this.configLinks]) {
       const url = safeLink(entry.Url);
@@ -313,15 +340,7 @@ class Theme {
       };
       dialog.querySelector('button')?.focus();
     }
-    const renderLibraries = (items: Item[]) => {
-      if (!dialog.isConnected) return;
-      for (const item of items) libraries.append(link(item.Name, saveTarget({
-        id: '', kind: 'catalog', library: item.Id, title: item.Name, media: '*'
-      })));
-      if (!items.length) libraries.hidden = true;
-    };
-    if (this.views.length) renderLibraries(this.views);
-    else void this.api.views().then(data => renderLibraries(data.Items)).catch(() => { libraries.hidden = true; });
+
   }
 
   private card(item: Item, landscape: boolean, eager: boolean) {
@@ -375,13 +394,10 @@ class Theme {
       }, signal, 300000);
       for (const item of page.Items) pinned.push({ id: item.Id, kind: 'collection', value: item.Id, title: item.Name });
     }
-    const filters = await this.api.filters(signal);
-    return [...pinned, ...(filters.Genres ?? []).slice(0, 3).map((genre): Shelf => ({
-      id: 'genre-' + genre, kind: 'genre', value: genre, title: genre
-    }))];
+    return pinned;
   }
 
-  private home(signal: AbortSignal, restore: () => void, position?: Position) {
+  private home(signal: AbortSignal, restore: () => void, position?: Position, catalog?: Shelf) {
     const home = el('div', 'jn-home');
     if (!this.customized) home.classList.add('jn-default-home');
     const hero = el('section', 'jn-feature');
@@ -444,22 +460,30 @@ class Theme {
       }
     };
 
-    this.layout.shelves.forEach(add);
-    if (this.layout.featured) {
+    const shelves = catalog ? [defaults[catalog.media === 'Movie' ? 0 : 1], ...genreShelves]
+      .map(shelf => ({ ...shelf, media: catalog.media })) : this.layout.shelves;
+    if (catalog) {
+      const catalogBar = el('div', 'jn-catalog-bar');
+      catalogBar.append(el('h1', '', catalog.title), link('Browse all ' + catalog.title.toLowerCase(), saveTarget(catalog)));
+      home.prepend(catalogBar);
+    }
+    shelves.forEach(add);
+    if (catalog || this.layout.featured) {
       queue.push(async () => {
         try {
-          const recent = await this.api.shelf(defaults[2], signal);
-          if (!signal.aborted) this.featured(hero, recent.Items);
+          const recent = await this.api.shelf(catalog?.media === 'Series' ? defaults[1] : defaults[0], signal);
+          const items = !catalog && !recent.Items.length ? (await this.api.shelf(defaults[1], signal)).Items : recent.Items;
+          if (!signal.aborted) this.featured(hero, items);
         } catch { /* The home remains usable without featured art. */ }
       });
       pump();
     }
-    if (!this.customized) {
+    if (!catalog && !this.customized) {
       void this.defaultShelves(signal).then(shelves => {
         shelves.forEach((shelf, index) => add(shelf, this.layout.shelves.length + index));
       }).catch(() => {});
     }
-    if (this.layout.shelves.every(shelf => shelf.hidden) && this.customized) {
+    if (!catalog && this.layout.shelves.every(shelf => shelf.hidden) && this.customized) {
       home.append(link('Customize Home', route('customize')));
     }
   }
@@ -471,37 +495,85 @@ class Theme {
     field.setAttribute('aria-label', 'Find a category');
     const list = el('div', 'jn-category-list');
     this.content.append(el('h1', '', 'Categories'), field, list);
-    const [filters, collections] = await Promise.all([
-      this.api.filters(signal),
-      this.api.collections(signal)
-    ]);
+    const genres = (await this.api.filters(signal)).Genres ?? [];
     if (signal.aborted) return;
-    const groups: [string, Kind, [string, string][]][] = [
-      ['Genres', 'genre', (filters.Genres ?? []).map(value => [value, value])],
-      ['Collections', 'collection', collections.map(item => [item.Id, item.Name])],
-      ['Tags', 'tag', (filters.Tags ?? []).map(value => [value, value])]
-    ];
-    const render = () => {
+    let revision = 0;
+    const previews = new Map<string, Promise<Item | undefined>>();
+    let previewSlots = 0;
+    const previewQueue: (() => void)[] = [];
+    const preview = (shelf: Shelf) => {
+      const key = shelf.kind + ':' + shelf.value;
+      const cached = previews.get(key);
+      if (cached) return cached;
+      const request = new Promise<Item | undefined>((resolve, reject) => {
+        const run = () => {
+          if (signal.aborted) { resolve(undefined); return; }
+          previewSlots++;
+          void this.api.shelf(shelf, signal, 0, 4).then(page => {
+            const artwork = (item: Item) => this.api.image(item, true, 420) || this.api.image(item, false, 320);
+            resolve(page.Items.find(artwork) ?? page.Items[0]);
+          }, reject).finally(() => {
+            previewSlots--;
+            previewQueue.shift()?.();
+          });
+        };
+        if (previewSlots < 4) run(); else previewQueue.push(run);
+      });
+      previews.set(key, request);
+      return request;
+    };
+    const render = async () => {
+      const attempt = ++revision;
       list.replaceChildren();
       const needle = field.value.trim().toLocaleLowerCase();
-      for (const [title, kind, entries] of groups) {
-        const matches = entries.filter(([, name]) => name.toLocaleLowerCase().includes(needle));
-        if (!matches.length) continue;
-        const section = el('section');
-        section.append(el('h2', '', title));
-        const grid = el('div', 'jn-category-grid');
-        for (const [value, name] of matches) {
-          const tile = link(name, saveTarget({ id: '', kind, value, title: name }));
-          tile.dataset.focus = kind + value;
-          grid.append(tile);
-        }
-        section.append(grid);
-        list.append(section);
-      }
-      if (!list.children.length) list.append(el('p', 'jn-status', 'No matching categories.'));
+      const status = el('p', 'jn-status', 'Loading categories…');
+      list.append(status);
+      const matches = genres.filter(genre => genre.toLocaleLowerCase().includes(needle));
+      const grid = el('div', 'jn-category-grid');
+      let cursor = 0;
+      let failed = false;
+      const more = button('Show more genres', () => void load());
+      const load = async () => {
+        more.disabled = true;
+        do {
+          const batch = matches.slice(cursor, cursor + 12);
+          cursor += batch.length;
+          const tiles = await Promise.all(batch.map(async name => {
+            const shelf: Shelf = { id: '', kind: 'genre', value: name, title: name };
+            try {
+              const item = await preview(shelf);
+              if (!item) return;
+              const tile = link('', saveTarget(shelf), 'jn-category-tile');
+              const src = this.api.image(item, true, 420) || this.api.image(item, false, 320);
+              if (src) tile.append(image(src));
+              tile.append(el('span', '', name));
+              tile.dataset.focus = 'genre' + name;
+              return tile;
+            } catch { failed = true; }
+          }));
+          if (signal.aborted || attempt !== revision) return;
+          for (const tile of tiles) if (tile) grid.append(tile);
+        } while (!grid.children.length && cursor < matches.length);
+        grid.hidden = !grid.children.length;
+        more.hidden = cursor >= matches.length;
+        more.disabled = false;
+        status.hidden = !!grid.children.length;
+        status.textContent = failed ? 'Genres could not be loaded.' : 'No matching genres.';
+      };
+      more.hidden = true;
+      list.append(grid, more);
+      await load();
     };
-    field.addEventListener('input', render);
-    render();
+    let searchTimer: number | undefined;
+    field.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => void render(), 180);
+    });
+    signal.addEventListener('abort', () => {
+      clearTimeout(searchTimer);
+      previewQueue.splice(0).forEach(run => run());
+    }, { once: true });
+    await render();
   }
 
   private browse(params: URLSearchParams, signal: AbortSignal, restore: () => void) {
@@ -622,6 +694,18 @@ class Theme {
   }
 }
 
+function releaseBoot() {
+  document.documentElement.classList.remove('jn-preparing');
+}
+
+function clearBoot(remember: boolean) {
+  releaseBoot();
+  try {
+    if (remember) sessionStorage.setItem('jellynet-ready', '1');
+    else sessionStorage.removeItem('jellynet-ready');
+  } catch { /* Storage is optional. */ }
+}
+
 function reconcile() {
   const account = session();
   if (app && app.account.key !== account?.key) {
@@ -629,7 +713,7 @@ function reconcile() {
     app = undefined;
   }
   if (account?.key !== blocked) blocked = undefined;
-  if (!account || blocked || (!app && !/^#\/home(?:[?]|$)/.test(location.hash))) return;
+  if (!account || blocked || (!app && !/^#\/(?:home|details|library|list|search|user\/settings)(?:[?]|$)/.test(location.hash))) return;
   if (app) {
     app.sync();
     return;
@@ -646,7 +730,7 @@ function reconcile() {
 
 function remote(event: KeyboardEvent) {
   const root = document.querySelector('.jn-root');
-  if (!root || root.classList.contains('jn-standard') || document.body.classList.contains('jt-open')) return;
+  if (!root || root.classList.contains('jn-standard') || document.body.classList.contains('jt-open') || document.getElementById('jm-app')) return;
   const dialog = root.querySelector<HTMLDialogElement>('dialog[open]');
   if (dialog && ['Escape', 'GoBack', 'BrowserBack', 'Backspace'].includes(event.key)
       && !(event.target instanceof HTMLInputElement)) {
