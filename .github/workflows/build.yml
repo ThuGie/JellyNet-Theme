@@ -1,0 +1,99 @@
+name: Build and publish JellyNet
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci
+      - run: npm run build
+      - name: Build plugin and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' JellyNet.csproj)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "JellyNet.csproj must specify a four-part version." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == 'tag' && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "The tag must be v$version." >&2
+            exit 1
+          fi
+          dotnet build --configuration Release
+          mkdir -p package
+          zip -j "package/JellyNet-$version.zip" bin/Release/net10.0/JellyNet.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JellyNet-plugin
+          path: package/JellyNet-*.zip
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: jellynet-release-manifest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: JellyNet-plugin
+          path: package
+      - name: Publish package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="JellyNet-${GITHUB_REF_NAME#v}.zip"
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "JellyNet ${GITHUB_REF_NAME#v}" "package/$name"
+          fi
+          mkdir -p published
+          if ! gh release download "$GITHUB_REF_NAME" --pattern "$name" --dir published; then
+            gh release upload "$GITHUB_REF_NAME" "package/$name"
+            gh release download "$GITHUB_REF_NAME" --pattern "$name" --dir published
+          fi
+          gh release view "$GITHUB_REF_NAME" --json body --jq .body > published/notes.md
+      - name: Update Jellyfin repository manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git switch --force-create main origin/main
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            node scripts/update-manifest.mjs "published/JellyNet-${GITHUB_REF_NAME#v}.zip" published/notes.md
+            git add manifest.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m "Publish JellyNet ${GITHUB_REF_NAME} in Jellyfin catalog"
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            git reset --hard origin/main
+          done
+          exit 1

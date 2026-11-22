@@ -1,0 +1,11 @@
+{
+  "name": "jellynet-theme",
+  "private": true,
+  "scripts": {
+    "build": "tsc && esbuild web/main.ts --bundle --target=chrome79,safari13 --minify --outfile=dist/jellynet.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  }
+}

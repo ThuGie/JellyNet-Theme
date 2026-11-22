@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<div id="jellyNetSettings" data-role="page" class="page type-interior pluginConfigurationPage">
+  <div data-role="content">
+    <div class="content-primary">
+      <h1>JellyNet</h1>
+      <form>
+        <label class="checkboxContainer">
+          <input is="emby-checkbox" name="enabled" type="checkbox">
+          <span>Enable JellyNet theme</span>
+        </label>
+        <div class="inputContainer">
+          <label for="jellyNetPilot">Pilot user IDs</label>
+          <textarea is="emby-textarea" id="jellyNetPilot" name="pilot" rows="3"></textarea>
+          <div class="fieldDescription">Optional. Enter one Jellyfin user ID per line. An empty list enables the theme for everyone.</div>
+        </div>
+        <div class="inputContainer">
+          <label for="jellyNetLinks">Plugin links</label>
+          <textarea is="emby-textarea" id="jellyNetLinks" name="links" rows="4"></textarea>
+          <div class="fieldDescription">One per line. Use Name | URL or Name | URL | admin for an administrator-only entry.</div>
+        </div>
+        <div class="inputContainer">
+          <label for="jellyNetTags">Pinned tags</label>
+          <textarea is="emby-textarea" id="jellyNetTags" name="tags" rows="3"></textarea>
+          <div class="fieldDescription">One Jellyfin tag per line.</div>
+        </div>
+        <div class="inputContainer">
+          <label for="jellyNetCollections">Pinned collection IDs</label>
+          <textarea is="emby-textarea" id="jellyNetCollections" name="collections" rows="3"></textarea>
+          <div class="fieldDescription">One Jellyfin collection ID per line.</div>
+        </div>
+        <button is="emby-button" type="submit" class="raised button-submit block">Save</button>
+        <p role="status"></p>
+      </form>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const page = document.getElementById('jellyNetSettings');
+      const form = page.querySelector('form');
+      const status = page.querySelector('[role=status]');
+      const id = '7b51fc65-1948-4858-b071-1ba39709d88f';
+      const field = name => form.elements.namedItem(name);
+      const lines = name => field(name).value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const guid = /^(?:[a-f\d]{32}|[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12})$/i;
+      const submit = form.querySelector('[type=submit]');
+      submit.disabled = true;
+      let config;
+      page.addEventListener('pageshow', async () => {
+        try {
+          config = await ApiClient.getPluginConfiguration(id);
+          field('enabled').checked = config.Enabled;
+          field('pilot').value = (config.PilotUsers || []).join('\n');
+          field('tags').value = (config.PinnedTags || []).join('\n');
+          field('collections').value = (config.PinnedCollections || []).join('\n');
+          field('links').value = (config.Links || []).map(link => [link.Name, link.Url, ...(link.AdminOnly ? ['admin'] : [])].join(' | ')).join('\n');
+          submit.disabled = false;
+        } catch {
+          status.textContent = 'JellyNet settings could not be loaded.';
+        }
+      });
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const pilot = lines('pilot');
+        const collections = lines('collections');
+        if (![...pilot, ...collections].every(value => guid.test(value))) {
+          status.textContent = 'Enter valid Jellyfin IDs in the pilot and collection fields.';
+          return;
+        }
+        const links = lines('links').map(line => line.split('|').map(value => value.trim()));
+        if (links.some(([name, url, role, extra]) => !name || !/^(?:https?:\/\/|#\/|\/(?!\/))/i.test(url || '') || (role && role !== 'admin') || extra !== undefined)) {
+          status.textContent = 'Check the name, URL and optional admin marker for each link.';
+          return;
+        }
+        submit.disabled = true;
+        try {
+          await ApiClient.updatePluginConfiguration(id, {
+            ...config,
+            Enabled: field('enabled').checked,
+            PilotUsers: pilot, PinnedTags: lines('tags'), PinnedCollections: collections,
+            Links: links.map(([Name, Url, role]) => ({ Name, Url, AdminOnly: role === 'admin' }))
+          });
+          status.textContent = 'Saved. Restart Jellyfin, then reload the web client.';
+        } catch {
+          status.textContent = 'JellyNet settings could not be saved.';
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    })();
+  </script>
+</div>
