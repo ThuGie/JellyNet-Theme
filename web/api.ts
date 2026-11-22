@@ -157,10 +157,10 @@ export class Library {
   }
 
   async years(signal?: AbortSignal) {
-    const data = await this.request<{ Years?: number[] }>('Items/Filters', {
-      userId: this.account.user, includeItemTypes: 'Movie,Series'
+    const data = await this.request<Page>('Years', {
+      userId: this.account.user, includeItemTypes: 'Movie,Series', recursive: true, enableImages: false
     }, signal, 300000);
-    return data.Years ?? [];
+    return data.Items.map(item => Number(item.Name)).filter(Number.isInteger).sort((left, right) => right - left);
   }
 
   async collections(signal: AbortSignal) {

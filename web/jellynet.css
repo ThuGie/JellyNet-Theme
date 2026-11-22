@@ -1,14 +1,14 @@
 .jn-root {
-  --jn-bg: #101019;
+  --jn-bg: var(--jellynet-background, #101019);
   --jn-panel: #191925;
   --jn-edge: #343449;
   --jn-copy: #f9f7ff;
   --jn-muted: #bebbd0;
-  --jn-accent: #d4b8fc;
+  --jn-accent: var(--jellynet-accent, #d4b8fc);
   --jn-accent-ink: #221334;
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 1000;
   color: var(--jn-copy);
   background: var(--jn-bg);
   display: flex;
@@ -35,6 +35,10 @@
   border-bottom: 1px solid var(--jn-edge);
   padding-top: max(0.65rem, env(safe-area-inset-top));
 }
+body.jn-enhanced .skinHeader { visibility: hidden; }
+.jn-root .jn-brand { font-size: 1.2rem; font-weight: 780; letter-spacing: -0.045em; color: var(--jn-accent); }
+.jn-root .jn-nav .jn-button { color: var(--jn-muted); background: transparent; border-color: transparent; }
+.jn-root .jn-nav .jn-button[aria-current], .jn-root .jn-nav .jn-button:hover { color: var(--jn-copy); background: var(--jn-panel); }
 .jn-nav, .jn-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
 .jn-content {
   flex: 1;
@@ -43,7 +47,7 @@
   overscroll-behavior: contain;
   scrollbar-color: var(--jn-edge) transparent;
 }
-.jn-root :is(.jn-button, input:not([type=checkbox]), select) {
+.jn-root .jn-button, .jn-root input:not([type=checkbox]), .jn-root select {
   font: inherit;
   min-height: 2.65rem;
   padding: 0.5rem 0.85rem;
@@ -135,8 +139,9 @@
 .jn-root.jn-standard { inset: auto 1rem 1rem auto; background: transparent; z-index: 30; }
 
 @media (max-width: 600px) {
-  .jn-nav { gap: 0.4rem; flex-wrap: nowrap; overflow-x: auto; }
-  .jn-nav .jn-button { white-space: nowrap; border-color: transparent; padding-inline: 0.45rem; }
+  .jn-root .jn-brand { display: none; }
+  .jn-nav { gap: 0.2rem; flex-wrap: nowrap; overflow-x: auto; }
+  .jn-root .jn-nav .jn-button { white-space: nowrap; padding-inline: 0.45rem; }
   .jn-bar { gap: 0.5rem; }
   .jn-default-home .jn-shelf[data-kind=resume] { order: -1; }
   .jn-feature { min-height: 14rem; }

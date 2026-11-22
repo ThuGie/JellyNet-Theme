@@ -170,6 +170,7 @@ class Theme {
   }
 
   private restoreStock() {
+    document.body.classList.remove('jn-enhanced');
     if (!this.nativeMain || !this.nativeState) return;
     this.nativeMain.inert = this.nativeState.inert;
     if (this.nativeState.aria === null) this.nativeMain.removeAttribute('aria-hidden');
@@ -189,11 +190,13 @@ class Theme {
     if (path !== '#/home') return;
     const params = new URLSearchParams(query);
     const view = params.get('jellynet') || '';
-    if (view && !['browse', 'categories', 'search', 'customize'].includes(view)) return;
+    if (view && !['browse', 'categories', 'search', 'customize', 'stock'].includes(view)) return;
 
     const signal = this.controller.signal;
-    if (this.layout.standard && !view) {
-      const shortcut = link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
+    if (view === 'stock' || (this.layout.standard && !view)) {
+      const shortcut = view === 'stock' && !this.layout.standard
+        ? link('Back to JellyNet', route(), 'jn-button jn-stock-shortcut')
+        : link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
       this.root.replaceChildren(shortcut);
       this.root.classList.add('jn-standard');
       document.body.append(this.root);
@@ -214,9 +217,13 @@ class Theme {
       link('Categories', route('categories')),
       link('Search', route('search'))
     );
-    bar.append(hamburger, nav);
+    for (const item of nav.querySelectorAll('a')) {
+      if (item.hash === this.hash) item.setAttribute('aria-current', 'page');
+    }
+    bar.append(hamburger, link('JellyNet', route(), 'jn-brand'), nav);
     this.content.replaceChildren();
     this.root.replaceChildren(bar, this.content);
+    document.body.classList.add('jn-enhanced');
     document.body.append(this.root);
     const stock = document.querySelector<HTMLElement>('#reactRoot, #appRoot, .mainAnimatedPages');
     if (stock) {
@@ -265,7 +272,7 @@ class Theme {
     const libraries = grouping('Libraries');
     const plugins = grouping('Plugins');
     const settings = grouping('Settings');
-    settings.append(link('Customize Home', route('customize')), link('Jellyfin settings', '#/user/settings'));
+    settings.append(link('Customize Home', route('customize')), link('Open standard Jellyfin home', route('stock')), link('Jellyfin settings', '#/user/settings'));
     if (this.settings?.IsAdmin) settings.append(link('Dashboard', '#/dashboard'));
     if (window.JellyTube) plugins.append(button('YouTube', () => {
       dialog.close();
