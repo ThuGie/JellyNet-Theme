@@ -3,9 +3,12 @@ export interface Item {
   Name: string;
   Type: string;
   MediaType?: string;
+  SourceType?: string;
   Overview?: string;
   ProductionYear?: number;
   ImageTags?: Record<string, string>;
+  ProviderIds?: Record<string, string>;
+  PremiereDate?: string;
   BackdropImageTags?: string[];
   SeriesId?: string;
   SeriesName?: string;
@@ -33,6 +36,8 @@ declare global {
     JellyTube?: { open(): Promise<void> | void };
     JellyManga?: { open(): Promise<void> | void };
     jellySpotPlugin?: { openUserUi(tab: string): void };
+    jellySeerrPlugin?: object;
+    jellySeerrModal?: { open(id: number, type: string): unknown };
   }
 }
 
@@ -100,7 +105,7 @@ export class Library {
     }
   }
 
-  async request<T>(path: string, query: Query = {}, signal?: AbortSignal, ttl = 0, body?: unknown): Promise<T> {
+  async request<T>(path: string, query: Query = {}, signal?: AbortSignal, ttl = 0, body?: unknown, optional = false): Promise<T> {
     const { client } = this.account;
     const url = new URL(client.getUrl(path), location.href);
     if (url.origin !== location.origin) throw new Error('Unexpected Jellyfin origin');
@@ -123,7 +128,7 @@ export class Library {
         body: body === undefined ? undefined : JSON.stringify(body)
       });
       if (session()?.key !== this.account.key) throw new Error('Jellyfin account changed');
-      if (response.status === 401 || response.status === 403) {
+      if (!optional && (response.status === 401 || response.status === 403)) {
         this.clear();
         this.unauthorized(response.status);
       }
@@ -224,6 +229,18 @@ export class Library {
     url.searchParams.set('quality', backdrop ? '75' : '82');
     url.searchParams.set('tag', tag);
     return url.href;
+  }
+
+  item(id: string, signal: AbortSignal) {
+    return this.request<Item>(`Items/${encodeURIComponent(id)}`, { userId: this.account.user }, signal, 30000);
+  }
+
+  async requestSearch(query: string, signal: AbortSignal) {
+    const language = (navigator.language || 'en').split('-')[0];
+    const data = await this.request<{ Items?: Item[]; items?: Item[]; Results?: Item[]; results?: Item[] }>(
+      'JellySeerr/search', { query, language }, signal, 0, undefined, true
+    );
+    return data.Items ?? data.items ?? data.Results ?? data.results ?? [];
   }
 
   private preferences(signal?: AbortSignal, body?: unknown) {

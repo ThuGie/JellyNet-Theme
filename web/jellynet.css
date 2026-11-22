@@ -256,3 +256,83 @@ body.jn-native-details #reactRoot :focus-visible { outline-color: var(--jn-detai
 .jn-drawer-top strong { font-size: 1.35rem; }
 .jn-root .jn-drawer-close { background: transparent; }
 .jn-root .jn-menu-group h2 { color: var(--jn-muted); font-size: .88rem; margin: 0 .85rem .25rem; }
+
+/* Browse and requests */
+.jn-browse-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .4rem 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--jn-edge);
+}
+.jn-root .jn-browse-heading h1 { margin: 0; font-weight: 760; }
+.jn-browse-count { color: var(--jn-muted); font-variant-numeric: tabular-nums; }
+.jn-browse-filters { margin: .75rem 0 1.3rem; }
+.jn-browse-filters > summary { cursor: pointer; width: fit-content; padding: .5rem .15rem; color: var(--jn-accent); }
+.jn-browse-filters[open] .jn-filters { padding: .85rem; background: var(--jn-panel); border-radius: .55rem; }
+.jn-root .jn-search-query { width: min(100%, 36rem); margin-top: 1rem; }
+.jn-browse-grid { grid-template-columns: repeat(auto-fill, minmax(min(10.5rem, 44vw), 1fr)); gap: 1.25rem 1rem; }
+.jn-browse-grid .jn-title { font-weight: 650; }
+.jn-browse-grid .jn-card:hover .jn-title { color: var(--jn-accent); }
+.jn-request-results { margin-top: 2.5rem; padding-top: 1.15rem; border-top: 1px solid var(--jn-edge); }
+.jn-root .jn-request-results h2 { margin-bottom: .9rem; }
+.jn-request-card { width: 100%; padding: 0; background: transparent; color: inherit; border: 0; text-align: start; cursor: pointer; }
+.jn-browse-grid > .jn-status { grid-column: 1 / -1; }
+
+/* Drawer navigation */
+.jn-root .jn-menu-group h2 {
+  color: var(--jn-accent);
+  font-size: .8rem;
+  font-weight: 740;
+  letter-spacing: .085em;
+  text-transform: uppercase;
+  margin: .3rem 0 .2rem;
+}
+.jn-root .jn-menu-group + .jn-menu-group { border-top: 1px solid var(--jn-edge); padding-top: .85rem; }
+.jn-root .jn-menu-group .jn-button {
+  justify-content: space-between;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid transparent;
+}
+.jn-menu-group .jn-button::after {
+  content: '';
+  flex: none;
+  width: .4rem;
+  height: .4rem;
+  border-top: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+  transform: rotate(45deg);
+  opacity: .65;
+}
+
+/* Native item pages retain Jellyfin playback and plugin controls. */
+.jn-root.jn-detail-chrome { inset: 0 0 auto; z-index: 1000; background: transparent; }
+body.jn-match-details header.MuiAppBar-root,
+body.jn-match-details .skinHeader,
+body.jn-player-theme header.MuiAppBar-root { display: none; }
+body.jn-match-details #itemBackdrop {
+  height: clamp(13rem, 24vw, 21rem);
+  background-image: linear-gradient(0deg, #260d15, rgb(38 13 21 / 20%) 85%),
+    var(--jn-detail-art, linear-gradient(120deg, #60182d, #260d15)) !important;
+  background-position: center 37%;
+  background-size: cover;
+}
+body.jn-match-details .detailLogo { display: none !important; }
+body.jn-match-details .detailPageWrapperContainer { background: #260d15; }
+body.jn-match-details .detailPagePrimaryContainer {
+  background: linear-gradient(180deg, #38101c, #260d15 13rem);
+}
+body.jn-match-details .detailPagePrimaryContent .itemName {
+  font-size: clamp(1.9rem, 4vw, 3.65rem);
+  font-weight: 750;
+  letter-spacing: -.03em;
+}
+body.jn-match-details .mainDetailButtons { gap: .25rem; flex-wrap: wrap; }
+body.jn-match-details .detailPageSecondaryContainer { border-top: 1px solid #723544; }
+
+@media (max-width: 600px) {
+  .jn-browse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.jn-match-details #itemBackdrop { height: 15rem; }
+}

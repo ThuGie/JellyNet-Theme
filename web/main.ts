@@ -176,7 +176,8 @@ class Theme {
   }
 
   private restoreStock() {
-    document.body.classList.remove('jn-enhanced', 'jn-native-details');
+    document.body.classList.remove('jn-enhanced', 'jn-native-details', 'jn-match-details', 'jn-player-theme');
+    document.body.style.removeProperty('--jn-detail-art');
     if (!this.nativeMain || !this.nativeState) return;
     this.nativeMain.inert = this.nativeState.inert;
     if (this.nativeState.aria === null) this.nativeMain.removeAttribute('aria-hidden');
@@ -185,38 +186,7 @@ class Theme {
     this.nativeState = undefined;
   }
 
-  private render() {
-    this.controller.abort();
-    this.controller = new AbortController();
-    this.observer?.disconnect();
-    this.menu?.close();
-    this.root.remove();
-    this.restoreStock();
-    const [path, query] = this.hash.split('?');
-    if (path !== '#/home') {
-      if (!this.layout.standard && /^#\/(?:details|library|list|search|user\/settings)(?:[/?]|$)/.test(path)) {
-        document.body.classList.add('jn-native-details');
-      }
-      releaseBoot();
-      return;
-    }
-    const params = new URLSearchParams(query);
-    const view = params.get('jellynet') || '';
-    if (view && !['browse', 'categories', 'search', 'customize', 'stock', 'movies', 'series'].includes(view)) return;
-
-    const signal = this.controller.signal;
-    if (view === 'stock' || (this.layout.standard && !view)) {
-      clearBoot(false);
-      const shortcut = view === 'stock' && !this.layout.standard
-        ? link('Back to JellyNet', route(), 'jn-button jn-stock-shortcut')
-        : link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
-      this.root.replaceChildren(shortcut);
-      this.root.classList.add('jn-standard');
-      document.body.append(this.root);
-      return;
-    }
-
-    this.root.classList.remove('jn-standard');
+  private navigationBar() {
     const bar = el('header', 'jn-bar');
     const hamburger = button('', () => this.openMenu(hamburger), 'jn-button jn-hamburger');
     hamburger.setAttribute('aria-label', 'Open navigation');
@@ -237,6 +207,45 @@ class Theme {
       if (item.hash === this.hash) item.setAttribute('aria-current', 'page');
     }
     bar.append(hamburger, link('JellyNet', route(), 'jn-brand'), nav);
+    return bar;
+  }
+
+  private render() {
+    this.controller.abort();
+    this.controller = new AbortController();
+    this.observer?.disconnect();
+    this.menu?.close();
+    this.root.remove();
+    this.root.classList.remove('jn-detail-chrome');
+    this.restoreStock();
+    const [path, query] = this.hash.split('?');
+    if (path !== '#/home') {
+      if (!this.layout.standard && /^#\/(?:details|library|list|search|user\/settings)(?:[/?]|$)/.test(path)) {
+        document.body.classList.add('jn-native-details');
+      }
+      if (!this.layout.standard && path === '#/details') this.mountDetailChrome(new URLSearchParams(query));
+      if (!this.layout.standard && path === '#/video') document.body.classList.add('jn-player-theme');
+      releaseBoot();
+      return;
+    }
+    const params = new URLSearchParams(query);
+    const view = params.get('jellynet') || '';
+    if (view && !['browse', 'categories', 'search', 'customize', 'stock', 'movies', 'series'].includes(view)) return;
+
+    const signal = this.controller.signal;
+    if (view === 'stock' || (this.layout.standard && !view)) {
+      clearBoot(false);
+      const shortcut = view === 'stock' && !this.layout.standard
+        ? link('Back to JellyNet', route(), 'jn-button jn-stock-shortcut')
+        : link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
+      this.root.replaceChildren(shortcut);
+      this.root.classList.add('jn-standard');
+      document.body.append(this.root);
+      return;
+    }
+
+    this.root.classList.remove('jn-standard');
+    const bar = this.navigationBar();
     this.content.classList.toggle('jn-home-content', !view);
     this.content.replaceChildren();
     this.root.replaceChildren(bar, this.content);
@@ -271,6 +280,22 @@ class Theme {
     else if (view === 'categories') void this.categories(signal).then(restore).catch(() => this.error(this.content, signal));
     else if (view === 'customize') void this.customize(signal).catch(() => this.error(this.content, signal));
     else this.home(signal, restore, position);
+  }
+
+  private mountDetailChrome(params: URLSearchParams) {
+    document.body.classList.add('jn-match-details');
+    this.root.classList.remove('jn-standard');
+    this.root.classList.add('jn-detail-chrome');
+    this.root.replaceChildren(this.navigationBar());
+    document.body.append(this.root);
+    const id = params.get('id');
+    const signal = this.controller.signal;
+    if (!id || !/^[0-9a-f-]{32,36}$/i.test(id)) return;
+    void this.api.item(id, signal).then(item => {
+      if (signal.aborted) return;
+      const artwork = this.api.image(item, true, 1280) || this.api.image(item, false, 640);
+      if (artwork) document.body.style.setProperty('--jn-detail-art', `url("${artwork}")`);
+    }).catch(() => {});
   }
 
   private error(host: HTMLElement, signal: AbortSignal, retry = () => this.render()) {
@@ -591,11 +616,29 @@ class Theme {
     field.setAttribute('aria-label', field.placeholder);
     field.value = params.get('q') ?? '';
     const toolbar = el('div', 'jn-filters');
-    const grid = el('div', 'jn-grid');
+    const filterPanel = el('details', 'jn-browse-filters');
+    filterPanel.append(el('summary', '', 'Filters and sorting'), toolbar);
+    const grid = el('div', 'jn-grid jn-browse-grid');
+    const requestGrid = el('div', 'jn-grid jn-browse-grid');
+    const requestSection = el('section', 'jn-request-results');
+    requestSection.append(el('h2', '', 'Available to request'), requestGrid);
+    requestSection.hidden = true;
+    const count = el('p', 'jn-browse-count');
+    count.setAttribute('role', 'status');
+    const heading = el('div', 'jn-browse-heading');
+    heading.append(el('h1', '', shelf.title), count);
     const pager = el('div', 'jn-actions');
-    this.content.append(el('h1', '', shelf.title));
-    if (search) this.content.append(field);
-    this.content.append(toolbar, grid, pager);
+    this.content.append(heading);
+    if (search) {
+      field.className = 'jn-search-query';
+      this.content.append(field);
+      if (window.jellySeerrPlugin) {
+        field.placeholder = 'Search your library and JellySeerr';
+        field.setAttribute('aria-label', field.placeholder);
+      }
+    }
+    if (!['resume', 'next', 'recommend'].includes(shelf.kind)) this.content.append(filterPanel);
+    this.content.append(grid, pager, requestSection);
 
     const save = (page: number) => {
       for (const key of ['library', 'media', 'year', 'watched', 'sort'] as const) {
@@ -618,6 +661,21 @@ class Theme {
       task = current;
       if (remember) save(page);
       pager.replaceChildren();
+      requestSection.hidden = true;
+      count.textContent = '';
+      const query = field.value.trim();
+      if (search && query.length >= 2 && window.jellySeerrPlugin && window.jellySeerrModal) {
+        requestSection.hidden = false;
+        requestGrid.replaceChildren(el('p', 'jn-status', 'Searching JellySeerr...'));
+        void this.api.requestSearch(query, current.signal).then(items => {
+          if (current.signal.aborted || signal.aborted) return;
+          const cards = items.map(item => this.requestCard(item)).filter((card): card is HTMLButtonElement => !!card);
+          requestGrid.replaceChildren(...cards);
+          if (!cards.length) requestGrid.append(el('p', 'jn-status', 'No request results.'));
+        }).catch(() => {
+          if (!current.signal.aborted && !signal.aborted) requestGrid.replaceChildren(el('p', 'jn-status', 'JellySeerr results are temporarily unavailable.'));
+        });
+      }
       grid.replaceChildren(el('p', 'jn-status', 'Loading…'));
       try {
         if (search && !field.value.trim()) {
@@ -627,6 +685,8 @@ class Theme {
         const data = await this.api.shelf(shelf, current.signal, page * limit, limit, field.value.trim(), true);
         if (current.signal.aborted || signal.aborted) return;
         grid.replaceChildren(...data.Items.map((item, i) => this.card(item, false, i < 6)));
+        const total = data.TotalRecordCount ?? data.Items.length;
+        count.textContent = search ? `${total} in your library` : `${total} ${total === 1 ? 'title' : 'titles'}`;
         if (!data.Items.length) grid.append(el('p', 'jn-status', 'No titles found.'));
         if (page) pager.append(button('Previous page', () => { page--; this.content.scrollTop = 0; void load(); }));
         if (data.TotalRecordCount == null ? data.Items.length === limit : (page + 1) * limit < data.TotalRecordCount) {
@@ -665,6 +725,25 @@ class Theme {
       }).catch(() => {});
     }
     void load(false);
+  }
+
+  private requestCard(item: Item) {
+    const provider = Object.fromEntries(Object.entries(item.ProviderIds ?? {}).map(([key, value]) => [key.toLowerCase(), value]));
+    const id = Number(provider.tmdb);
+    const source = (item.SourceType ?? item.Type).toLowerCase();
+    const type = source === 'movie' ? 'movie' : ['tv', 'series'].includes(source) ? 'tv' : '';
+    if (!Number.isSafeInteger(id) || id <= 0 || !type) return;
+    const card = button('', () => window.jellySeerrModal?.open(id, type), 'jn-card jn-request-card');
+    const artwork = el('div', 'jn-artwork');
+    const poster = provider.tmdbposterpath;
+    const cached = provider.jellyseerrposter;
+    if (cached && /^\/JellySeerr\/CachedImage\/[a-f0-9]+$/i.test(cached)) {
+      artwork.append(image(this.account.client.getUrl(cached.slice(1))));
+    } else if (poster && /^\/[a-z0-9_-]+\.(?:jpg|jpeg|png|webp)$/i.test(poster)) {
+      artwork.append(image('https://image.tmdb.org/t/p/w342' + poster));
+    } else artwork.append(el('span', 'jn-monogram', item.Name.trim().charAt(0) || ''));
+    card.append(artwork, el('span', 'jn-title', item.Name));
+    return card;
   }
 
   private async customize(signal: AbortSignal) {
@@ -732,6 +811,7 @@ function remote(event: KeyboardEvent) {
   const root = document.querySelector('.jn-root');
   if (!root || root.classList.contains('jn-standard') || document.body.classList.contains('jt-open') || document.getElementById('jm-app')) return;
   const dialog = root.querySelector<HTMLDialogElement>('dialog[open]');
+  if (root.classList.contains('jn-detail-chrome') && !dialog && !(event.target instanceof Element && root.contains(event.target))) return;
   if (dialog && ['Escape', 'GoBack', 'BrowserBack', 'Backspace'].includes(event.key)
       && !(event.target instanceof HTMLInputElement)) {
     event.preventDefault();
@@ -746,7 +826,7 @@ function remote(event: KeyboardEvent) {
 
   if (/^Arrow/.test(event.key) && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement
        || event.target instanceof HTMLTextAreaElement)) {
-    const nodes = [...(dialog ?? root).querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input, select')]
+    const nodes = [...(dialog ?? root).querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input, select, summary')]
       .filter(node => node.getClientRects().length);
     const current = document.activeElement as HTMLElement;
     let target: HTMLElement | undefined;
