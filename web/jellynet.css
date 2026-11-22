@@ -35,7 +35,7 @@
   border-bottom: 1px solid var(--jn-edge);
   padding-top: max(0.65rem, env(safe-area-inset-top));
 }
-body.jn-enhanced .skinHeader { visibility: hidden; }
+body.jn-enhanced .skinHeader, body.jn-enhanced header.MuiAppBar-root { display: none; }
 .jn-root .jn-brand { font-size: 1.2rem; font-weight: 780; letter-spacing: -0.045em; color: var(--jn-accent); }
 .jn-root .jn-nav .jn-button { color: var(--jn-muted); background: transparent; border-color: transparent; }
 .jn-root .jn-nav .jn-button[aria-current], .jn-root .jn-nav .jn-button:hover { color: var(--jn-copy); background: var(--jn-panel); }
