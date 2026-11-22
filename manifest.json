@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.3.0",
+        "changelog": "**Full Changelog**: https://github.com/ThuGie/JellyNet-Theme/compare/v1.0.2.0...v1.0.3.0",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/ThuGie/JellyNet-Theme/releases/download/v1.0.3.0/JellyNet-1.0.3.0.zip",
+        "checksum": "1ba3ed1d422cafe9f23e1552e2d90318",
+        "timestamp": "2026-11-22T23:10:07Z"
+      },
+      {
         "version": "1.0.2.0",
         "changelog": "**Full Changelog**: https://github.com/ThuGie/JellyNet-Theme/compare/v1.0.1.0...v1.0.2.0",
         "targetAbi": "12.4.0.0",
