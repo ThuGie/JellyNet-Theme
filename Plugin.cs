@@ -60,7 +60,8 @@ public sealed class Registration(ILogger<Registration> logger) : Microsoft.Exten
             var json = JsonSerializer.Serialize(new
             {
                 id = new Guid("7b51fc65-1948-4858-b071-1ba39709d88f"),
-                fileNamePattern = @"^index\.html$",
+                // File Transformation runs the exact-path pipeline before considering regex keys.
+                fileNamePattern = "index.html",
                 callbackAssembly = typeof(Registration).Assembly.FullName,
                 callbackClass = typeof(Registration).FullName,
                 callbackMethod = nameof(Transform)
