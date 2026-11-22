@@ -205,8 +205,11 @@ class Theme {
 
     this.root.classList.remove('jn-standard');
     const bar = el('header', 'jn-bar');
-    const hamburger = button('☰', () => this.openMenu(hamburger), 'jn-button jn-hamburger');
+    const hamburger = button('', () => this.openMenu(hamburger), 'jn-button jn-hamburger');
     hamburger.setAttribute('aria-label', 'Open navigation');
+    const menuIcon = el('span', 'jn-menu-icon');
+    menuIcon.setAttribute('aria-hidden', 'true');
+    hamburger.append(menuIcon);
     hamburger.dataset.focus = 'menu';
     const nav = el('nav', 'jn-nav');
     nav.setAttribute('aria-label', 'Browse');
@@ -221,6 +224,7 @@ class Theme {
       if (item.hash === this.hash) item.setAttribute('aria-current', 'page');
     }
     bar.append(hamburger, link('JellyNet', route(), 'jn-brand'), nav);
+    this.content.classList.toggle('jn-home-content', !view);
     this.content.replaceChildren();
     this.root.replaceChildren(bar, this.content);
     document.body.classList.add('jn-enhanced');
@@ -346,7 +350,7 @@ class Theme {
     const art = image(this.api.image(item, true, 1280), true);
     art.setAttribute('fetchpriority', 'high');
     const copy = el('div', 'jn-feature-copy');
-    copy.append(el('p', 'jn-feature-label', 'Featured'), el('h1', '', item.SeriesName || item.Name));
+    copy.append(el('h1', '', item.SeriesName || item.Name));
     if (item.ProductionYear) copy.append(el('p', 'jn-year', String(item.ProductionYear)));
     const actions = el('div', 'jn-actions');
     actions.append(button(item.UserData?.PlaybackPositionTicks ? 'Resume' : 'Play', async () => {
@@ -432,7 +436,7 @@ class Theme {
         this.observer?.unobserve(section);
         load();
       };
-      if (index < 2 || !this.observer || position) load();
+      if (index < 3 || !this.observer || position) load();
       else {
         visible.set(section, activate);
         section.addEventListener('focusin', activate, { once: true });
@@ -691,6 +695,23 @@ function remote(event: KeyboardEvent) {
 
 document.addEventListener('keydown', remote, true);
 window.addEventListener('hashchange', reconcile);
+window.addEventListener('popstate', reconcile);
+const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+navigation?.addEventListener('currententrychange', reconcile);
+
+// Older app webviews may replace the login route without emitting a hash-change event.
+let loginCheck: number | undefined;
+document.addEventListener('submit', () => {
+  if (!/^#\/login(?:[?]|$)/.test(location.hash) || loginCheck !== undefined) return;
+  const deadline = Date.now() + 5000;
+  loginCheck = window.setInterval(() => {
+    reconcile();
+    if (app || Date.now() > deadline) {
+      window.clearInterval(loginCheck);
+      loginCheck = undefined;
+    }
+  }, 50);
+}, true);
 window.addEventListener('storage', reconcile);
 document.addEventListener('visibilitychange', reconcile);
 window.setInterval(() => { if (!document.hidden) reconcile(); }, 1000);
