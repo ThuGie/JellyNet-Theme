@@ -364,7 +364,7 @@ body.jn-match-details .detailPageSecondaryContainer { border-top: 1px solid #723
   background: linear-gradient(0deg, rgb(33 10 17 / 92%), transparent 75%),
     linear-gradient(90deg, rgb(80 24 39 / 94%), rgb(80 24 39 / 25%) 80%);
 }
-body.jn-player-theme .skinHeader,
+body.jn-player-theme .skinHeader:not(.osdHeader),
 body.jn-player-theme .headerTabs,
 body.jn-player-theme [data-jellyseerr-modern-nav] { display: none !important; }
 

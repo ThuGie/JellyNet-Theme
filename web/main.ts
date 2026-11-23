@@ -102,6 +102,8 @@ class Theme {
   private controller = new AbortController();
   private lifetime = new AbortController();
   private observer?: IntersectionObserver;
+  private artObserver?: IntersectionObserver;
+  private artPending = new WeakMap<HTMLImageElement, (width: number) => string>();
   private positions = new Map<string, Position>();
   private hash = '';
   private layout = initial();
@@ -171,6 +173,8 @@ class Theme {
     this.lifetime.abort();
     this.controller.abort();
     this.observer?.disconnect();
+    this.artObserver?.disconnect();
+    this.artObserver = undefined;
     this.menu?.close();
     this.root.remove();
     this.restoreStock();
@@ -217,6 +221,8 @@ class Theme {
     this.controller.abort();
     this.controller = new AbortController();
     this.observer?.disconnect();
+    this.artObserver?.disconnect();
+    this.artObserver = undefined;
     this.menu?.close();
     this.root.remove();
     this.root.classList.remove('jn-detail-chrome');
@@ -404,12 +410,46 @@ class Theme {
     }
   }
 
-  private card(item: Item, landscape: boolean, eager: boolean) {
+  private deferredArtwork(makeUrl: (width: number) => string) {
+    const node = el('img');
+    node.alt = '';
+    node.decoding = 'async';
+    node.addEventListener('error', () => node.remove(), { once: true });
+    const start = (img: HTMLImageElement, source: (width: number) => string) => {
+      const width = img.getBoundingClientRect().width;
+      const target = Math.ceil(width * Math.min(window.devicePixelRatio || 1, 2));
+      const size = [160, 240, 320, 480, 640].find(bucket => bucket >= target) ?? 640;
+      img.src = source(size);
+    };
+    if (!('IntersectionObserver' in window)) {
+      node.loading = 'lazy';
+      node.src = makeUrl(320);
+      return node;
+    }
+    if (!this.artObserver) {
+      this.artObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          const img = entry.target as HTMLImageElement;
+          const source = this.artPending.get(img);
+          if (!entry.isIntersecting || !source) continue;
+          this.artObserver?.unobserve(img);
+          this.artPending.delete(img);
+          start(img, source);
+        }
+      }, { root: this.content, rootMargin: '130px 0px' });
+    }
+    this.artPending.set(node, makeUrl);
+    this.artObserver.observe(node);
+    return node;
+  }
+
+  private card(item: Item, landscape: boolean) {
     const card = link('', details(item, this.account), 'jn-card' + (landscape ? ' jn-landscape' : ''));
     card.dataset.focus = item.Id;
     const artwork = el('div', 'jn-artwork');
-    const src = this.api.image(item, landscape, landscape ? 460 : 320) || this.api.image(item, false, 320);
-    if (src) artwork.append(image(src, eager));
+    const artworkType = this.api.image(item, landscape, 320) ? landscape : false;
+    const src = this.api.image(item, artworkType, 320);
+    if (src) artwork.append(this.deferredArtwork(width => this.api.image(item, artworkType, width)));
     else artwork.append(el('span', 'jn-monogram', item.Name.trim().charAt(0) || '•'));
     const progress = item.UserData?.PlayedPercentage;
     if (progress && progress > 0 && progress < 100) {
@@ -427,7 +467,7 @@ class Theme {
   private featured(host: HTMLElement, items: Item[]) {
     const item = items[0];
     if (!item) return;
-    const art = image(this.api.image(item, true, 1280), true);
+    const art = image(this.api.image(item, true, window.innerWidth <= 600 ? 640 : window.innerWidth <= 1000 ? 960 : 1280), true);
     art.setAttribute('fetchpriority', 'high');
     const copy = el('div', 'jn-feature-copy');
     copy.append(el('h1', '', item.SeriesName || item.Name));
@@ -507,7 +547,7 @@ class Theme {
             const result = await this.api.shelf(shelf, signal);
             if (signal.aborted) return;
             if (!result.Items.length) section.hidden = true;
-            else row.replaceChildren(...result.Items.map((item, i) => this.card(item, Boolean(shelf.landscape), index < 2 && i < 3)));
+            else row.replaceChildren(...result.Items.map(item => this.card(item, Boolean(shelf.landscape))));
             if (position?.focus && row.querySelector('[data-focus="' + CSS.escape(position.focus) + '"]')) restore();
           } catch { this.error(row, signal, load); }
         });
@@ -626,8 +666,10 @@ class Theme {
               const item = await preview(shelf);
               if (!item) return;
               const tile = link('', saveTarget(shelf), 'jn-category-tile');
-              const src = this.api.image(item, true, 420) || this.api.image(item, false, 320);
-              if (src) tile.append(image(src));
+              const backdrop = Boolean(this.api.image(item, true, 320));
+              if (this.api.image(item, backdrop, 320)) {
+                tile.append(this.deferredArtwork(width => this.api.image(item, backdrop, width)));
+              }
               tile.append(el('span', '', name));
               tile.dataset.focus = 'genre' + name;
               return tile;
@@ -744,9 +786,10 @@ class Theme {
         }
         const data = await this.api.shelf(shelf, current.signal, page * limit, limit, field.value.trim(), true);
         if (current.signal.aborted || signal.aborted) return;
-        grid.replaceChildren(...data.Items.map((item, i) => this.card(item, false, i < 6)));
+        grid.replaceChildren(...data.Items.map(item => this.card(item, false)));
         if (catalogPage) {
-          const art = data.Items.map(item => this.api.image(item, true, 960)).find(Boolean);
+          const width = window.innerWidth <= 600 ? 640 : 960;
+          const art = data.Items.map(item => this.api.image(item, true, width)).find(Boolean);
           mastheadArt.replaceChildren(...(art ? [image(art, true)] : []));
         }
         const total = data.TotalRecordCount ?? data.Items.length;

@@ -90,7 +90,18 @@ export class HttpError extends Error {
   constructor(readonly status: number) { super(`Jellyfin returned ${status}`); }
 }
 
+function canEncodeWebp() {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    return canvas.toDataURL('image/webp').startsWith('data:image/webp');
+  } catch {
+    return false;
+  }
+}
+
 export class Library {
+  private readonly webp = canEncodeWebp();
   private cache = new Map<string, { expires: number; data: unknown }>();
   private requests = new Map<string, { signal?: AbortSignal; promise: Promise<unknown> }>();
 
@@ -254,7 +265,8 @@ export class Library {
     if (!id || !tag) return '';
     const url = new URL(this.account.client.getUrl(`Items/${encodeURIComponent(id)}/Images/${backdrop ? 'Backdrop/0' : 'Primary'}`));
     url.searchParams.set('maxWidth', String(width));
-    url.searchParams.set('quality', backdrop ? '75' : '82');
+    url.searchParams.set('quality', this.webp ? (backdrop ? '74' : '78') : (backdrop ? '75' : '82'));
+    if (this.webp) url.searchParams.set('format', 'Webp');
     url.searchParams.set('tag', tag);
     return url.href;
   }
