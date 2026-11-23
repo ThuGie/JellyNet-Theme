@@ -55,6 +55,8 @@ function initial(): Layout {
 
 const kinds = new Set<Kind>(['resume', 'next', 'latest', 'favorites', 'releases', 'genre', 'tag', 'collection', 'recommend', 'catalog']);
 const trustedHash = /^#\/[\w/-]+(?:\?[^\s]*)?$/;
+const nativeBrowse = /^#\/(?:details|library|list|search|favorites|playlists?|user\/settings)(?:[/?]|$)/;
+const userRoute = /^#\/(?!login|selectserver|addserver|wizard|startup)[\w/-]+(?:[?]|$)/;
 
 function safeLink(value: string) {
   if (trustedHash.test(value)) return value;
@@ -108,6 +110,7 @@ class Theme {
   private layoutReadable = false;
 
   private player = false;
+  private featuredChoices = new Map<string, Item[]>();
   private nativeMain?: HTMLElement;
   private nativeState?: { inert: boolean; aria: string | null };
   private configLinks: Settings['Links'] = [];
@@ -176,7 +179,7 @@ class Theme {
   }
 
   private restoreStock() {
-    document.body.classList.remove('jn-enhanced', 'jn-native-details', 'jn-match-details', 'jn-player-theme');
+    document.body.classList.remove('jn-enhanced', 'jn-native-details', 'jn-native-palette', 'jn-native-chrome', 'jn-match-details', 'jn-player-theme');
     document.body.style.removeProperty('--jn-detail-art');
     if (!this.nativeMain || !this.nativeState) return;
     this.nativeMain.inert = this.nativeState.inert;
@@ -220,11 +223,15 @@ class Theme {
     this.restoreStock();
     const [path, query] = this.hash.split('?');
     if (path !== '#/home') {
-      if (!this.layout.standard && /^#\/(?:details|library|list|search|user\/settings)(?:[/?]|$)/.test(path)) {
-        document.body.classList.add('jn-native-details');
+      if (!this.layout.standard && userRoute.test(path)) {
+        document.body.classList.add('jn-native-palette');
+        if (nativeBrowse.test(path)) {
+          document.body.classList.add('jn-native-details');
+          this.mountNativeChrome();
+        }
+        if (path === '#/details') this.styleDetail(new URLSearchParams(query));
+        if (path === '#/video') document.body.classList.add('jn-player-theme');
       }
-      if (!this.layout.standard && path === '#/details') this.mountDetailChrome(new URLSearchParams(query));
-      if (!this.layout.standard && path === '#/video') document.body.classList.add('jn-player-theme');
       releaseBoot();
       return;
     }
@@ -235,6 +242,9 @@ class Theme {
     const signal = this.controller.signal;
     if (view === 'stock' || (this.layout.standard && !view)) {
       clearBoot(false);
+      if (!this.layout.standard && (params.has('jellynetPlugin') || params.has('tab'))) {
+        document.body.classList.add('jn-native-palette');
+      }
       const shortcut = view === 'stock' && !this.layout.standard
         ? link('Back to JellyNet', route(), 'jn-button jn-stock-shortcut')
         : link('Customize Home', route('customize'), 'jn-button jn-stock-shortcut');
@@ -282,12 +292,16 @@ class Theme {
     else this.home(signal, restore, position);
   }
 
-  private mountDetailChrome(params: URLSearchParams) {
-    document.body.classList.add('jn-match-details');
+  private mountNativeChrome() {
+    document.body.classList.add('jn-native-chrome');
     this.root.classList.remove('jn-standard');
     this.root.classList.add('jn-detail-chrome');
     this.root.replaceChildren(this.navigationBar());
     document.body.append(this.root);
+  }
+
+  private styleDetail(params: URLSearchParams) {
+    document.body.classList.add('jn-match-details');
     const id = params.get('id');
     const signal = this.controller.signal;
     if (!id || !/^[0-9a-f-]{32,36}$/i.test(id)) return;
@@ -332,6 +346,12 @@ class Theme {
         if (this.root.isConnected) this.content.prepend(el('p', 'jn-status', name + ' could not be opened.'));
       });
     }));
+    if (window.jellySeerrPlugin?.selectjellySeerrTab) browse.append(button('Requests', () => {
+      dialog.close();
+      void this.openRequests();
+    }));
+    const vote = document.getElementById('jellyvote-header-btn');
+    if (vote) addPlugin('JellyVote', () => vote.click());
     if (window.JellyTube) addPlugin('YouTube', () => window.JellyTube?.open());
     if (window.jellySpotPlugin) addPlugin('Spotify', () => {
       location.hash = route('stock', { tab: 'browse' });
@@ -368,6 +388,22 @@ class Theme {
 
   }
 
+  private async openRequests() {
+    location.hash = route('stock', { jellynetPlugin: 'requests' });
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (!location.hash.includes('jellynetPlugin=requests')) return;
+      const tab = document.querySelector<HTMLElement>(
+        '[data-jellyseerr-modern-tab="requests"], button[data-jellyseerr-tab="requests"]'
+      );
+      const seerr = window.jellySeerrPlugin;
+      if (seerr?.selectjellySeerrTab && tab) {
+        await seerr.selectjellySeerrTab('requests');
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+  }
+
   private card(item: Item, landscape: boolean, eager: boolean) {
     const card = link('', details(item, this.account), 'jn-card' + (landscape ? ' jn-landscape' : ''));
     card.dataset.focus = item.Id;
@@ -389,7 +425,7 @@ class Theme {
   }
 
   private featured(host: HTMLElement, items: Item[]) {
-    const item = items.find(candidate => this.api.image(candidate, true, 1280));
+    const item = items[0];
     if (!item) return;
     const art = image(this.api.image(item, true, 1280), true);
     art.setAttribute('fetchpriority', 'high');
@@ -400,6 +436,11 @@ class Theme {
     actions.append(button(item.UserData?.PlaybackPositionTicks ? 'Resume' : 'Play', async () => {
       if (!await play(item, this.account) && session()?.key === this.account.key) location.hash = details(item, this.account);
     }, 'jn-button jn-primary'), link('Details', details(item, this.account)));
+    if (items.length > 1) actions.append(button('Another pick', () => {
+      items.push(items.shift()!);
+      this.featured(host, items);
+      host.querySelector<HTMLButtonElement>('.jn-actions button:last-child')?.focus();
+    }));
     copy.append(actions);
     host.replaceChildren(art, copy);
     host.hidden = false;
@@ -496,9 +537,25 @@ class Theme {
     if (catalog || this.layout.featured) {
       queue.push(async () => {
         try {
-          const recent = await this.api.shelf(catalog?.media === 'Series' ? defaults[1] : defaults[0], signal);
-          const items = !catalog && !recent.Items.length ? (await this.api.shelf(defaults[1], signal)).Items : recent.Items;
-          if (!signal.aborted) this.featured(hero, items);
+          const key = catalog?.media ?? 'home';
+          let picks = this.featuredChoices.get(key);
+          if (!picks) {
+            const recent = catalog
+              ? (await this.api.shelf(catalog.media === 'Series' ? defaults[1] : defaults[0], signal)).Items
+              : (await Promise.all([
+                ...defaults.slice(0, 2).map(shelf => this.api.shelf(shelf, signal).catch(() => ({ Items: [] }))),
+                this.api.shelf({ id: 'featured-recommend', title: '', kind: 'recommend' }, signal, 0, 12)
+                  .catch(() => ({ Items: [] }))
+              ])).flatMap(page => page.Items);
+            if (signal.aborted) return;
+            picks = [...new Map(recent.map(item => [item.Id, item])).values()].filter(item => this.api.image(item, true, 1280));
+            for (let i = picks.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [picks[i], picks[j]] = [picks[j], picks[i]];
+            }
+            this.featuredChoices.set(key, picks);
+          }
+          if (!signal.aborted) this.featured(hero, picks);
         } catch { /* The home remains usable without featured art. */ }
       });
       pump();
@@ -625,7 +682,10 @@ class Theme {
     requestSection.hidden = true;
     const count = el('p', 'jn-browse-count');
     count.setAttribute('role', 'status');
-    const heading = el('div', 'jn-browse-heading');
+    const catalogPage = !search && (shelf.media === 'Movie' || shelf.media === 'Series');
+    const heading = el('div', 'jn-browse-heading' + (catalogPage ? ' jn-library-masthead' : ''));
+    const mastheadArt = el('div', 'jn-library-art');
+    if (catalogPage) heading.append(mastheadArt);
     heading.append(el('h1', '', shelf.title), count);
     const pager = el('div', 'jn-actions');
     this.content.append(heading);
@@ -685,6 +745,10 @@ class Theme {
         const data = await this.api.shelf(shelf, current.signal, page * limit, limit, field.value.trim(), true);
         if (current.signal.aborted || signal.aborted) return;
         grid.replaceChildren(...data.Items.map((item, i) => this.card(item, false, i < 6)));
+        if (catalogPage) {
+          const art = data.Items.map(item => this.api.image(item, true, 960)).find(Boolean);
+          mastheadArt.replaceChildren(...(art ? [image(art, true)] : []));
+        }
         const total = data.TotalRecordCount ?? data.Items.length;
         count.textContent = search ? `${total} in your library` : `${total} ${total === 1 ? 'title' : 'titles'}`;
         if (!data.Items.length) grid.append(el('p', 'jn-status', 'No titles found.'));
@@ -717,8 +781,8 @@ class Theme {
       add('Type', 'media', [['', 'Movies and series'], ['Movie', 'Movies'], ['Series', 'Series'], ['*', 'All media']]);
       add('Watched', 'watched', [['', 'Any status'], ['true', 'Watched'], ['false', 'Unwatched']]);
       add('Sort', 'sort', [['', 'Default'], ['SortName', 'Title'], ['PremiereDate', 'Release date'], ['DateCreated', 'Date added']]);
-      if (shelf.kind !== 'collection') void this.api.views().then(data => {
-        if (!signal.aborted) add('Library', 'library', [['', 'All libraries'], ...data.Items.map((item): [string, string] => [item.Id, item.Name])]);
+      if (shelf.kind !== 'collection') void (shelf.media === 'Movie' ? this.api.movieLibraries() : this.api.views().then(page => page.Items)).then(items => {
+        if (!signal.aborted) add('Library', 'library', [['', 'All libraries'], ...items.map((item): [string, string] => [item.Id, item.Name])]);
       }).catch(() => {});
       void this.api.years(signal).then(years => {
         if (!signal.aborted) add('Year', 'year', [['', 'Any year'], ...years.map((year): [string, string] => [String(year), String(year)])]);
@@ -792,7 +856,7 @@ function reconcile() {
     app = undefined;
   }
   if (account?.key !== blocked) blocked = undefined;
-  if (!account || blocked || (!app && !/^#\/(?:home|details|library|list|search|user\/settings)(?:[?]|$)/.test(location.hash))) return;
+  if (!account || blocked || (!app && !userRoute.test(location.hash))) return;
   if (app) {
     app.sync();
     return;
@@ -809,7 +873,7 @@ function reconcile() {
 
 function remote(event: KeyboardEvent) {
   const root = document.querySelector('.jn-root');
-  if (!root || root.classList.contains('jn-standard') || document.body.classList.contains('jt-open') || document.getElementById('jm-app')) return;
+  if (!root || root.classList.contains('jn-standard') || document.body.classList.contains('jt-open') || document.getElementById('jm-app') || document.querySelector('.jv-modal-backdrop')) return;
   const dialog = root.querySelector<HTMLDialogElement>('dialog[open]');
   if (root.classList.contains('jn-detail-chrome') && !dialog && !(event.target instanceof Element && root.contains(event.target))) return;
   if (dialog && ['Escape', 'GoBack', 'BrowserBack', 'Backspace'].includes(event.key)

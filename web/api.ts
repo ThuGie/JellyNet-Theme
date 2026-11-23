@@ -6,6 +6,8 @@ export interface Item {
   SourceType?: string;
   Overview?: string;
   ProductionYear?: number;
+  DateCreated?: string;
+  SortName?: string;
   ImageTags?: Record<string, string>;
   ProviderIds?: Record<string, string>;
   PremiereDate?: string;
@@ -36,7 +38,7 @@ declare global {
     JellyTube?: { open(): Promise<void> | void };
     JellyManga?: { open(): Promise<void> | void };
     jellySpotPlugin?: { openUserUi(tab: string): void };
-    jellySeerrPlugin?: object;
+    jellySeerrPlugin?: { selectjellySeerrTab(id: string): unknown };
     jellySeerrModal?: { open(id: number, type: string): unknown };
   }
 }
@@ -183,7 +185,33 @@ export class Library {
     }
     return items;
   }
-  shelf(shelf: Shelf, signal: AbortSignal, start = 0, limit = 16, search = '', paged = false): Promise<Page> {
+  async movieLibraries() {
+    const { Items } = await this.views();
+    const typed = Items.filter(item => item.CollectionType === 'movies');
+    return typed.length ? typed : Items.filter(item =>
+      item.Type === 'CollectionFolder' && !item.CollectionType && !/jellytube|youtube/i.test(item.Name)
+    );
+  }
+
+  async shelf(shelf: Shelf, signal: AbortSignal, start = 0, limit = 16, search = '', paged = false): Promise<Page> {
+    if (shelf.media === 'Movie' && !shelf.library && shelf.kind !== 'collection') {
+      const libraries = await this.movieLibraries();
+      if (!libraries.length) return { Items: [], TotalRecordCount: 0 };
+      if (libraries.length === 1) return this.queryShelf({ ...shelf, library: libraries[0].Id }, signal, start, limit, search, paged);
+      const pages = await Promise.all(libraries.map(library => this.queryShelf(
+        { ...shelf, library: library.Id }, signal, 0, start + limit, search, paged, true
+      )));
+      const sort = shelf.sort ?? (shelf.kind === 'latest' ? 'DateCreated' : shelf.kind === 'releases' ? 'PremiereDate' : 'SortName');
+      const items = pages.flatMap(page => page.Items);
+      items.sort((left, right) => sort === 'SortName'
+        ? (left.SortName ?? left.Name).localeCompare(right.SortName ?? right.Name)
+        : (right[sort as 'DateCreated' | 'PremiereDate'] ?? '').localeCompare(left[sort as 'DateCreated' | 'PremiereDate'] ?? ''));
+      return { Items: items.slice(start, start + limit), TotalRecordCount: pages.reduce((total, page) => total + (page.TotalRecordCount ?? page.Items.length), 0) };
+    }
+    return this.queryShelf(shelf, signal, start, limit, search, paged);
+  }
+
+  private queryShelf(shelf: Shelf, signal: AbortSignal, start: number, limit: number, search: string, paged: boolean, merge = false): Promise<Page> {
     const userId = this.account.user;
     const query = { userId, startIndex: start, limit, enableTotalRecordCount: paged };
     if (shelf.kind === 'resume') return this.request('UserItems/Resume', { ...query, mediaTypes: 'Video', imageTypeLimit: 1, enableUserData: true }, signal, 30000);
@@ -197,7 +225,7 @@ export class Library {
       genres: shelf.kind === 'genre' ? shelf.value : undefined,
       tags: shelf.kind === 'tag' ? shelf.value : undefined,
       years: shelf.year, isPlayed: shelf.watched, isFavorite: shelf.kind === 'favorites' ? true : undefined,
-      searchTerm: search, sortBy: sort, sortOrder: sort === 'SortName' ? 'Ascending' : 'Descending',
+      searchTerm: search, fields: merge ? 'DateCreated,SortName' : undefined, sortBy: sort, sortOrder: sort === 'SortName' ? 'Ascending' : 'Descending',
       enableUserData: shelf.kind === 'favorites' || Boolean(shelf.watched), imageTypeLimit: 1
     }, signal, shelf.kind === 'favorites' || shelf.watched ? 30000 : 300000);
   }
